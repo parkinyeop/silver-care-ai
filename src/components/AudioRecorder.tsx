@@ -4,9 +4,11 @@ import { useState, useRef } from 'react';
 
 interface AudioRecorderProps {
     onRecordingComplete: (audioBlob: Blob) => void;
+    script?: string; // 대사집 (선택사항)
+    role?: 'child' | 'parent'; // 역할 (선택사항)
 }
 
-export default function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
+export default function AudioRecorder({ onRecordingComplete, script, role }: AudioRecorderProps) {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -76,6 +78,35 @@ export default function AudioRecorder({ onRecordingComplete }: AudioRecorderProp
                 {formatTime(recordingTime)}
             </div>
 
+            {/* 대사집 표시 */}
+            {script && (
+                <div style={{ 
+                    marginBottom: '24px', 
+                    padding: '16px', 
+                    backgroundColor: '#F5F5F5', 
+                    borderRadius: '12px',
+                    textAlign: 'left',
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    fontSize: '18px',
+                    lineHeight: '1.8',
+                    color: '#333'
+                }}>
+                    <div style={{ 
+                        fontSize: '16px', 
+                        fontWeight: 'bold', 
+                        marginBottom: '12px', 
+                        color: '#666',
+                        textAlign: 'center'
+                    }}>
+                        📝 아래 대사를 자연스럽게 읽어주세요
+                    </div>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                        {script}
+                    </div>
+                </div>
+            )}
+
             {!isRecording ? (
                 <button onClick={startRecording} className="btn-large">
                     🔴 녹음 시작
@@ -87,7 +118,7 @@ export default function AudioRecorder({ onRecordingComplete }: AudioRecorderProp
             )}
 
             <p style={{ marginTop: '16px', color: '#666' }}>
-                자녀분의 목소리를 30초 이상 녹음해주세요.
+                {role === 'parent' ? '부모님' : '자녀분'}의 목소리를 30초 이상 녹음해주세요.
             </p>
         </div>
     );

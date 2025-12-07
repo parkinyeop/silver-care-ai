@@ -1,19 +1,33 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { speechToText, generateResponse, textToSpeech, ChatMessage } from '@/services/ai';
+import { generateResponse, textToSpeech, ChatMessage } from '@/services/ai';
 import { getVoiceProfileByRole } from '@/services/voice';
+
+// Web Speech API 타입 정의
+declare global {
+    interface Window {
+        webkitSpeechRecognition: any;
+        SpeechRecognition: any;
+    }
+}
+
+type InputMode = 'text' | 'voice';
 
 export default function ChatInterface() {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [inputMode, setInputMode] = useState<InputMode>('text'); // 'text' or 'voice'
+    const [inputText, setInputText] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [hasVoiceRegistered, setHasVoiceRegistered] = useState(false);
+    const [recognizedText, setRecognizedText] = useState('');
     
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioChunksRef = useRef<Blob[]>([]);
+    const recognitionRef = useRef<any>(null);
     const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+    const finalTranscriptRef = useRef<string>('');
+    const inputRef = useRef<HTMLInputElement>(null);
 
     // Auto-scroll to bottom
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -26,68 +40,118 @@ export default function ChatInterface() {
     useEffect(() => {
         const childVoice = getVoiceProfileByRole('child');
         setHasVoiceRegistered(!!childVoice?.voiceModelId);
+        
+        // Web Speech API 초기화
+        if (typeof window !== 'undefined') {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                const recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = true;
+                recognition.lang = 'ko-KR'; // 한국어 설정
+                
+                recognition.onstart = () => {
+                    setIsListening(true);
+                    setRecognizedText('');
+                    finalTranscriptRef.current = '';
+                };
+                
+                recognition.onresult = (event: any) => {
+                    let interimTranscript = '';
+                    let finalTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += transcript + ' ';
+                        } else {
+                            interimTranscript += transcript;
+                        }
+                    }
+                    
+                    if (finalTranscript) {
+                        finalTranscriptRef.current += finalTranscript;
+                    }
+                    
+                    setRecognizedText(finalTranscriptRef.current || interimTranscript);
+                };
+                
+                recognition.onerror = (event: any) => {
+                    console.error('Speech recognition error:', event.error);
+                    setIsListening(false);
+                    if (event.error === 'no-speech') {
+                        alert('음성이 감지되지 않았습니다. 다시 시도해주세요.');
+                    } else if (event.error === 'not-allowed') {
+                        alert('마이크 접근 권한이 필요합니다.');
+                    }
+                };
+                
+                recognition.onend = () => {
+                    setIsListening(false);
+                    const text = finalTranscriptRef.current.trim();
+                    if (text) {
+                        handleProcessing(text);
+                    }
+                    finalTranscriptRef.current = '';
+                };
+                
+                recognitionRef.current = recognition;
+            } else {
+                console.warn('Web Speech API is not supported in this browser');
+            }
+        }
+        
+        return () => {
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
+            }
+        };
     }, []);
 
-    const handleStartListening = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorderRef.current = new MediaRecorder(stream);
-            audioChunksRef.current = [];
-
-            mediaRecorderRef.current.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    audioChunksRef.current.push(e.data);
-                }
-            };
-
-            mediaRecorderRef.current.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                await handleProcessing(audioBlob);
-                // Stop all tracks to release microphone
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            mediaRecorderRef.current.start();
-            setIsListening(true);
-        } catch (err) {
-            console.error('Error accessing microphone:', err);
-            alert('마이크 접근 권한이 필요합니다.');
+    const handleStartListening = () => {
+        if (recognitionRef.current) {
+            try {
+                recognitionRef.current.start();
+            } catch (err) {
+                console.error('Error starting speech recognition:', err);
+                alert('음성 인식을 시작할 수 없습니다. 브라우저를 확인해주세요.');
+            }
+        } else {
+            alert('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Edge 브라우저를 사용해주세요.');
         }
     };
 
     const handleStopListening = () => {
-        if (mediaRecorderRef.current && isListening) {
-            mediaRecorderRef.current.stop();
-            setIsListening(false);
+        if (recognitionRef.current && isListening) {
+            recognitionRef.current.stop();
         }
     };
 
-    const handleProcessing = async (audioBlob: Blob) => {
+    const handleProcessing = async (userText: string) => {
+        if (!userText || userText.trim() === '') {
+            return;
+        }
+
         setIsProcessing(true);
 
         try {
-            // 1. STT: Convert audio to text
-            const userText = await speechToText(audioBlob);
-            if (!userText || userText.trim() === '') {
-                alert('음성을 인식하지 못했습니다. 다시 말해주세요.');
-                setIsProcessing(false);
-                return;
-            }
-
+            // 사용자 메시지 추가
             const userMsg: ChatMessage = { role: 'user', text: userText };
             setMessages(prev => [...prev, userMsg]);
 
-            // 2. LLM: Generate response
+            // LLM: Generate response
             const aiText = await generateResponse(userText);
 
-            // 3. TTS: Convert response to audio using child's voice
-            const audioUrl = await textToSpeech(aiText, 'child');
+            // TTS: Convert response to audio using child's voice (음성 모드일 때만)
+            const audioUrl = inputMode === 'voice' && hasVoiceRegistered 
+                ? await textToSpeech(aiText, 'child') 
+                : '';
 
             const aiMsg: ChatMessage = { role: 'assistant', text: aiText, audioUrl };
             setMessages(prev => [...prev, aiMsg]);
 
-            // 4. Auto-play the audio response
-            if (audioUrl) {
+            // Auto-play the audio response (음성 모드일 때만)
+            if (audioUrl && inputMode === 'voice') {
                 await playAudio(audioUrl);
             }
 
@@ -97,6 +161,22 @@ export default function ChatInterface() {
         } finally {
             setIsProcessing(false);
         }
+    };
+
+    const handleTextSubmit = (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (inputText.trim() && !isProcessing) {
+            handleProcessing(inputText.trim());
+            setInputText('');
+        }
+    };
+
+    const handleModeSwitch = (mode: InputMode) => {
+        // 음성 모드에서 텍스트 모드로 전환 시 음성 인식 중지
+        if (mode === 'text' && isListening) {
+            handleStopListening();
+        }
+        setInputMode(mode);
     };
 
     const playAudio = (audioUrl: string): Promise<void> => {
@@ -171,6 +251,11 @@ export default function ChatInterface() {
                     </div>
                 ))}
 
+                {isListening && recognizedText && (
+                    <div style={{ alignSelf: 'flex-start', padding: '16px', backgroundColor: '#FFF9C4', borderRadius: '16px', fontSize: '18px', fontStyle: 'italic' }}>
+                        🎤 {recognizedText}
+                    </div>
+                )}
                 {isProcessing && (
                     <div style={{ alignSelf: 'flex-start', padding: '16px', backgroundColor: '#F5F5F5', borderRadius: '16px' }}>
                         생각하는 중... 🤔
@@ -179,29 +264,106 @@ export default function ChatInterface() {
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* Mode Toggle */}
+            <div style={{ padding: '8px 16px', borderTop: '1px solid #eee', backgroundColor: '#F5F5F5', display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                <button
+                    onClick={() => handleModeSwitch('text')}
+                    style={{
+                        padding: '8px 16px',
+                        fontSize: '16px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        backgroundColor: inputMode === 'text' ? 'var(--primary-color)' : '#E0E0E0',
+                        color: inputMode === 'text' ? 'white' : '#666',
+                        cursor: 'pointer',
+                        fontWeight: inputMode === 'text' ? 'bold' : 'normal'
+                    }}
+                >
+                    ✍️ 텍스트
+                </button>
+                <button
+                    onClick={() => handleModeSwitch('voice')}
+                    style={{
+                        padding: '8px 16px',
+                        fontSize: '16px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        backgroundColor: inputMode === 'voice' ? 'var(--primary-color)' : '#E0E0E0',
+                        color: inputMode === 'voice' ? 'white' : '#666',
+                        cursor: 'pointer',
+                        fontWeight: inputMode === 'voice' ? 'bold' : 'normal'
+                    }}
+                >
+                    🗣️ 음성
+                </button>
+            </div>
+
             {/* Controls */}
             <div style={{ padding: '16px', borderTop: '1px solid #eee', backgroundColor: 'white' }}>
-                {isPlaying ? (
-                    <button className="btn-large btn-accent" disabled>
-                        🔊 말하는 중...
-                    </button>
-                ) : isListening ? (
-                    <button onClick={handleStopListening} className="btn-large btn-accent" style={{ animation: 'pulse 1s infinite' }}>
-                        👂 듣고 있어요... (누르면 중지)
-                    </button>
+                {inputMode === 'text' ? (
+                    // 텍스트 모드
+                    <form onSubmit={handleTextSubmit} style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={inputText}
+                            onChange={(e) => setInputText(e.target.value)}
+                            placeholder="메시지를 입력하세요..."
+                            disabled={isProcessing}
+                            style={{
+                                flex: 1,
+                                fontSize: '18px',
+                                padding: '12px 16px',
+                                borderRadius: '24px',
+                                border: '2px solid #E0E0E0',
+                                outline: 'none'
+                            }}
+                            onKeyPress={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleTextSubmit();
+                                }
+                            }}
+                        />
+                        <button
+                            type="submit"
+                            className="btn-large"
+                            disabled={!inputText.trim() || isProcessing}
+                            style={{
+                                minWidth: '80px',
+                                padding: '12px 24px',
+                                borderRadius: '24px'
+                            }}
+                        >
+                            전송
+                        </button>
+                    </form>
                 ) : (
-                    <button 
-                        onClick={handleStartListening} 
-                        className="btn-large" 
-                        disabled={isProcessing || !hasVoiceRegistered}
-                    >
-                        {!hasVoiceRegistered 
-                            ? '먼저 목소리를 등록해주세요' 
-                            : isProcessing 
-                                ? '잠시만 기다려주세요' 
-                                : '🗣️ 대화 시작하기'
-                        }
-                    </button>
+                    // 음성 모드
+                    <>
+                        {isPlaying ? (
+                            <button className="btn-large btn-accent" disabled>
+                                🔊 말하는 중...
+                            </button>
+                        ) : isListening ? (
+                            <button onClick={handleStopListening} className="btn-large btn-accent" style={{ animation: 'pulse 1s infinite' }}>
+                                👂 듣고 있어요... (누르면 중지)
+                            </button>
+                        ) : (
+                            <button 
+                                onClick={handleStartListening} 
+                                className="btn-large" 
+                                disabled={isProcessing || !hasVoiceRegistered}
+                            >
+                                {!hasVoiceRegistered 
+                                    ? '먼저 목소리를 등록해주세요' 
+                                    : isProcessing 
+                                        ? '잠시만 기다려주세요' 
+                                        : '🗣️ 음성으로 대화하기'
+                                }
+                            </button>
+                        )}
+                    </>
                 )}
             </div>
 

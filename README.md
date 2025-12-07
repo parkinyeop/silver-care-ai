@@ -14,16 +14,19 @@
 프로젝트 루트에 `.env.local` 파일을 생성하고 다음 환경 변수를 설정하세요:
 
 ```bash
-# OpenAI API Key (음성 인식 및 대화 생성용)
-# 발급: https://platform.openai.com/api-keys
-NEXT_PUBLIC_OPENAI_API_KEY=your_openai_api_key_here
+# Google Gemini API Key (AI 대화 생성 및 심리 분석용)
+# 발급: https://makersuite.google.com/app/apikey
+NEXT_PUBLIC_GEMINI_API_KEY=your_gemini_api_key_here
 
-# ElevenLabs API Key (음성 생성 및 목소리 클론용)
+# ElevenLabs API Key (음성 생성 및 목소리 클론용, 선택사항)
 # 발급: https://elevenlabs.io/app/settings/api-keys
 NEXT_PUBLIC_ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 ```
 
-> **참고**: API 키가 없어도 Mock 모드로 실행되지만, 실제 기능을 사용하려면 API 키가 필요합니다.
+> **참고**: 
+> - **음성 인식**: 브라우저의 Web Speech API를 사용하므로 별도 API 키가 필요 없습니다 (Chrome/Edge 권장)
+> - **AI 대화**: Gemini API 키가 필요합니다. 없으면 Mock 모드로 동작합니다.
+> - **음성 생성**: ElevenLabs API 키가 없으면 Mock 모드로 동작합니다 (음성 재생 없음).
 
 ## Getting Started
 

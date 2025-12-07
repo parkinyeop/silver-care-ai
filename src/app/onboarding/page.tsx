@@ -5,11 +5,13 @@ import AudioRecorder from '@/components/AudioRecorder';
 import Link from 'next/link';
 import { saveVoiceProfile, VoiceRole } from '@/services/voice';
 import { createVoiceModel } from '@/services/ai';
+import { getScriptsByRole, VoiceScript } from '@/data/voiceScripts';
 
 export default function OnboardingPage() {
     const [step, setStep] = useState<'consent' | 'role' | 'intro' | 'record' | 'complete' | 'error'>('consent');
     const [selectedRole, setSelectedRole] = useState<VoiceRole | null>(null);
     const [voiceName, setVoiceName] = useState('');
+    const [selectedScript, setSelectedScript] = useState<VoiceScript | null>(null);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
@@ -144,6 +146,37 @@ export default function OnboardingPage() {
                             />
                         </div>
 
+                        <div style={{ marginBottom: '16px' }}>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '18px', fontWeight: 'bold' }}>
+                                📝 녹음할 대사 선택 (선택사항)
+                            </label>
+                            <p style={{ fontSize: '14px', color: '#666', marginBottom: '12px' }}>
+                                아래 대사 중 하나를 선택하거나, 자유롭게 말씀하셔도 됩니다.
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                                {selectedRole && getScriptsByRole(selectedRole).map((script) => (
+                                    <button
+                                        key={script.id}
+                                        onClick={() => setSelectedScript(script)}
+                                        style={{
+                                            padding: '12px',
+                                            fontSize: '16px',
+                                            borderRadius: '8px',
+                                            border: selectedScript?.id === script.id ? '2px solid var(--primary-color)' : '1px solid #ccc',
+                                            backgroundColor: selectedScript?.id === script.id ? '#E8F5E9' : 'white',
+                                            textAlign: 'left',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{script.title}</div>
+                                        <div style={{ fontSize: '14px', color: '#666' }}>
+                                            예상 시간: 약 {script.estimatedSeconds}초
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
                         <ul style={{ paddingLeft: '20px', marginBottom: '24px', lineHeight: '1.8' }}>
                             <li>조용한 곳에서 녹음해주세요.</li>
                             <li>평소 말투로 자연스럽게 읽어주세요.</li>
@@ -151,7 +184,10 @@ export default function OnboardingPage() {
                         </ul>
                     </div>
 
-                    <button onClick={() => setStep('record')} className="btn-large">
+                    <button 
+                        onClick={() => setStep('record')} 
+                        className="btn-large"
+                    >
                         🎙️ 녹음하기
                     </button>
                 </>
@@ -169,7 +205,11 @@ export default function OnboardingPage() {
                             </p>
                         </div>
                     ) : (
-                        <AudioRecorder onRecordingComplete={handleRecordingComplete} />
+                        <AudioRecorder 
+                            onRecordingComplete={handleRecordingComplete}
+                            script={selectedScript?.content}
+                            role={selectedRole || undefined}
+                        />
                     )}
                 </>
             )}

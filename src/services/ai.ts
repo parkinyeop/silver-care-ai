@@ -1,5 +1,5 @@
 // AI Service for Speech-to-Text, LLM, and Text-to-Speech
-// Supports OpenAI Whisper (STT), OpenAI GPT (LLM), and ElevenLabs (TTS with voice cloning)
+// Supports Web Speech API (STT), Anthropic Claude (LLM), and ElevenLabs (TTS with voice cloning)
 
 import { getActiveVoiceModelId, VoiceRole } from './voice';
 
@@ -10,6 +10,8 @@ export interface ChatMessage {
 }
 
 // STT: Converts audio blob to text using OpenAI Whisper API
+// Note: 현재는 ChatInterface에서 Web Speech API를 직접 사용하므로 이 함수는 사용되지 않습니다.
+// 필요시 OpenAI Whisper API를 사용할 수 있도록 유지합니다.
 export const speechToText = async (audioBlob: Blob): Promise<string> => {
     // Check if API key is configured
     const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
@@ -50,53 +52,35 @@ export const speechToText = async (audioBlob: Blob): Promise<string> => {
     }
 };
 
-// LLM: Generates text response using OpenAI GPT API
+// LLM: Generates text response using Anthropic Claude API (via Next.js API Route)
 export const generateResponse = async (inputText: string): Promise<string> => {
-    const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-
-    if (!apiKey) {
-        // Fallback to mock for development
-        console.warn('OpenAI API key not found, using mock LLM');
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve("네, 날씨가 정말 좋아서 공원에 다녀왔어요. 우리 아들도 밥 잘 챙겨 먹고 있지?");
-            }, 2000);
-        });
-    }
-
     try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        const response = await fetch('/api/chat', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
             },
-            body: JSON.stringify({
-                model: 'gpt-4o-mini',
-                messages: [
-                    {
-                        role: 'system',
-                        content: '당신은 자녀의 목소리로 부모님과 대화하는 따뜻하고 친근한 AI 어시스턴트입니다. 부모님께 존중하고 배려하는 말투로 자연스럽게 대화하세요.'
-                    },
-                    {
-                        role: 'user',
-                        content: inputText
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 200,
-            }),
+            body: JSON.stringify({ text: inputText }),
         });
 
         if (!response.ok) {
-            throw new Error(`LLM API error: ${response.statusText}`);
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to generate response');
         }
 
         const data = await response.json();
-        return data.choices[0]?.message?.content || '';
+        const text = data.text || data.error || "죄송해요, 잠시 문제가 생겼어요. 다시 말씀해주실 수 있나요?";
+        
+        if (data.text) {
+            console.log('✅ Claude API 응답 성공:', text.substring(0, 50) + '...');
+        }
+        
+        return text;
     } catch (error) {
-        console.error('LLM error:', error);
-        throw error;
+        console.error('❌ LLM error:', error);
+        // 에러 발생 시 Mock 응답 반환 (사용자 경험 개선)
+        console.warn('⚠️ Falling back to mock response due to error');
+        return "죄송해요, 잠시 문제가 생겼어요. 다시 말씀해주실 수 있나요?";
     }
 };
 
@@ -162,7 +146,16 @@ export const createVoiceModel = async (
     const apiKey = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY;
 
     if (!apiKey) {
-        throw new Error('ElevenLabs API key not found');
+        // Fallback to mock for development
+        console.warn('ElevenLabs API key not found, using mock voice model');
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                // Generate a mock voice model ID for testing
+                // Format: mock_voice_{timestamp}_{random}
+                const mockId = `mock_voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                resolve(mockId);
+            }, 2000);
+        });
     }
 
     try {
